@@ -1,58 +1,41 @@
+
+import uuid
+import requests
+import openai
 import os
-from tkinter import Image
-from utils import *
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv("../.env")
-# Check if all required environment variables are set
-# This must happen before importing video which uses API keys without checking
-check_env_vars()
 
-from gpt import *
-from video import *
-from search import *
-from uuid import uuid4
-from tiktokvoice import *
-from flask_cors import CORS
-from termcolor import colored
-from youtube import upload_video
-from apiclient.errors import HttpError
-from flask import Flask, request, jsonify
-from moviepy.config import change_settings
-from moviepy.editor import *
+def save_image_locally(image_url):
+    image_id = uuid.uuid4()
+    image_path = f"{image_id}.jpeg"
 
-# Set environment variables
-SESSION_ID = os.getenv("TIKTOK_SESSION_ID")
-openai_api_key = os.getenv('OPENAI_API_KEY')
-change_settings({"IMAGEMAGICK_BINARY": os.getenv("IMAGEMAGICK_BINARY")})
+    payload = {}
+    headers = {
+      'Authorization': 'ZW7nMLprvXyJub29QkWBYcfemuRxE9rUbtejdrLLm52snO2TbwQzED2k',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+    }
 
-# Initialize Flask
-app = Flask(__name__)
-CORS(app)
+    response = requests.request("GET", image_url, headers=headers, data=payload)
 
-# Constants
-HOST = "0.0.0.0"
-PORT = 8080
-AMOUNT_OF_STOCK_VIDEOS = 5
-GENERATING = False
+    with open(image_path, "wb") as f:
+        f.write(response.content)
 
-def print_fn(msg):
-    print(msg)
-    logger.info(msg)
+    return image_path
 
-# Generation Endpoint
-@app.route("/api/generate", methods=["POST"])
-def generate():
+# Implement openai TTS function
+def openai_tts(text, voice):
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    print(f"Converting text to speech...: {text}")
+    response = openai.audio.speech.create(
+        model="tts-1",
+        voice=voice,
+        input=text
+    )
+    return response
+
+
+def generateVideo():
     try:
-
-    
-        logger.info("------- FONTS -------")
-        logger.info(TextClip.list('font'))
-        logger.info(TextClip.search('Poppins', 'font'))
-        logger.info(TextClip.search('Montserrat', 'font'))
-        logger.info(TextClip.search('DejaVu' ,'font'))
-        logger.info("------- FONTS -------")
         # Set global variable
         global GENERATING
         GENERATING = True
@@ -64,9 +47,8 @@ def generate():
 
         # Parse JSON
         data = request.get_json()
-        paragraph_number = int(data.get('paragraphNumber', 1))  # Default to 1 if not provided
-        ai_model = data.get('aiModel')  # Get the AI model selected by the user
-        n_threads = data.get('threads')  # Amount of threads to use for video generation
+        ai_model = data.get('aiModel', 'gpt-4o-mini')  # Get the AI model selected by the user
+        n_threads = data.get('threads', 2)  # Amount of threads to use for video generation
         subtitles_position = data.get('subtitlesPosition')  # Position of the subtitles in the video
         text_color = data.get('color') # Color of subtitle text
         use_stock_videos = data.get('useStockVideos', False)
@@ -82,9 +64,6 @@ def generate():
         # Get 'automateYoutubeUpload' from the request data and default to False if not provided
         automate_youtube_upload = data.get('automateYoutubeUpload', False)
 
-        # Get the ZIP Url of the songs
-        songs_zip_url = data.get('zipUrl')
-
         # Download songs
         if use_music:
             # Downloads a ZIP file containing popular TikTok Songs
@@ -96,9 +75,8 @@ def generate():
 
         # Print little information about the video which is to be generated
         print_fn(colored("[Video to be generated]", "blue"))
-        print_fn(colored("   Subject: " + data["videoSubject"], "blue"))
         print_fn(colored("   AI Model: " + ai_model, "blue"))  # Print the AI model being used
-        print_fn(colored("   Custom Prompt: " + data["customPrompt"], "blue"))  # Print the AI model being used
+        print_fn(colored("   Custom Prompt: " + data.get("customPrompt", ''), "blue"))  # Print the AI model being used
 
 
 
@@ -122,7 +100,7 @@ def generate():
 
         # Generate a script
         print_fn(colored("[+] Generating script...", "blue"))
-        script = video_script if video_script else generate_script(data["videoSubject"], paragraph_number, ai_model, voice, data["customPrompt"])  # Pass the AI model to the script generation
+        script = video_script
         print_fn(colored("[+] Generated script", "blue"))
         print_fn(script)
 
@@ -219,20 +197,11 @@ def generate():
             images_paths = []
 
             it = len(video_images) if video_images else 5
-            if not video_images:
-              try:
-                stock_imgs = search_for_stock_images(
-                    data["videoSubject"], os.getenv("PEXELS_API_KEY"), it
-                )
-              except:
-                stock_imgs = []
-            else:
-              stock_imgs = video_images
             # Let user know
-            print_fn(colored(f"[+] Downloading {len(stock_imgs)} images...", "blue"))
+            print_fn(colored(f"[+] Downloading {len(video_images)} images...", "blue"))
 
             # Save the videos
-            for image_url in stock_imgs:
+            for image_url in video_images:
                 if not GENERATING:
                     return jsonify(
                         {
@@ -252,14 +221,13 @@ def generate():
             print_fn(colored("[+] Images downloaded!", "green"))
 
             print_fn("========== STOCK IMAGES ==========")
-            print_fn(stock_imgs)
             print_fn(images_paths)
             print_fn("========== STOCK IMAGES ==========")
 
             img = images_paths if images_paths and len(images_paths) > 0 else ['./backend/img1.jpg', './backend/img2.jpg', './backend/img3.jpg']
 
-            clips = [ImageClip(m).set_duration(2)
-                  for m in img]
+            clips = [ImageClip(img[mi]).set_duration(script[mi]['duration'])
+                  for mi in range(len(img))]
 
             for clip in clips:
               width, height = clip.size
@@ -272,8 +240,8 @@ def generate():
                 border_width = (target_width - width) // 2
                 """ black_border_clip = ImageClip(Image.new("RGB", (border_width, tagert_height), (0, 0, 0)))
                 composite_image_clip = CompositeVideoClip([black_border_clip, clip, black_border_clip])
-                clip = composite_image_clip.set_duration(clip.duration) """
-                clip.margin(left=border_width, right=border_width, top=0, bottom=0)
+                clip = composite_image_clip.set_duration(clip.duration)
+                clip.margin(left=border_width, right=border_width, top=0, bottom=0) """
 
             concat_clip = concatenate_videoclips(clips, method="compose")
             concat_clip.write_videofile("../temp/test.mp4", fps=60)
@@ -292,10 +260,12 @@ def generate():
             )
 
         # Split script into sentences
-        sentences = script.split(". ")
+        # concat_script = '. '.join(s['dialogue'] for s in script)
+
+        sentences = map(lambda s: s['dialogue'], script)
 
         # Remove empty strings
-        sentences = list(filter(lambda x: x != "", sentences))
+        # sentences = list(filter(lambda x: x != "", sentences))
         paths = []
 
         # Generate TTS for every sentence
@@ -446,208 +416,3 @@ def generate():
             }
         )
 
-@app.route("/api/generate_image", methods=["POST"])
-def generate_image():
-    try:
-        data = request.get_json()
-        prompt = data.get('prompt')
-        # Set global variable
-        global GENERATING
-        GENERATING = True
-        
-        response = generateImage(prompt)
-
-        return jsonify(
-            {
-                "status": "success",
-                "message": "Image generated! See MoneyPrinter/output.mp4 for result.",
-                "data": response.get('data', response),
-            }
-        )
-    except Exception as err:
-        print_fn(colored(f"[-] Error: {str(err)}", "red"))
-        return jsonify(
-            {
-                "status": "error",
-                "message": f"Could not retrieve stock videos: {str(err)}",
-                "data": [],
-            }
-        )
-
-@app.route("/api/cancel", methods=["POST"])
-def cancel():
-    print_fn(colored("[!] Received cancellation request...", "yellow"))
-
-    global GENERATING
-    GENERATING = False
-
-    return jsonify({"status": "success", "message": "Cancelled video generation."})
-
-@app.route("/api/test", methods=["POST"])
-def test():
-    try:
-        data = request.get_json()
-        image_url = data.get('image_url')
-
-        print(image_url)
-        
-        response = save_image(image_url)
-        return jsonify(
-            {
-                "status": "success",
-                "message": "Image generated! See MoneyPrinter/output.mp4 for result.",
-                "data": response,
-            }
-        )
-    except Exception as err:
-        print_fn(colored(f"[-] Error: {str(err)}", "red"))
-        return jsonify(
-            {
-                "status": "error",
-                "message": f"Could not retrieve stock videos: {str(err)}",
-                "data": [],
-            }
-        )
-
-@app.route("/api/generate/video", methods=["POST"])
-def generate_video_by_script():
-  # 1. Each script has a duration - dialogue - and visual
-  # 2. The images script is a list of images urls corresponding to the number of dialogues in the script
-  # 3. We create a video for each dialogue with the corresponding image
-    try:
-        # Clean
-        clean_dir("../temp/")
-        clean_dir("../subtitles/")
-
-        # Parse JSON
-        data = request.get_json()
-        script = data.get('videoScript', [])
-        images = data.get('videoImages', [])
-        voice = data.get('voice', 'alloy')
-        n_threads = data.get('threads', 2)
-        subtitles_position = data.get('subtitlesPosition', 'center,center')
-        horizontal_subtitles_position, vertical_subtitles_position = (subtitles_position.split(',')[0], subtitles_position.split(',')[1])
-
-        text_color = data.get('color', '#FFFFFF')
-        target_resolution = data.get('targetResolution', '1920:1080').split(':')
-        target_width, target_height = int(target_resolution[0]), int(target_resolution[1])
-
-        video_clips = []
-        audio_clips = []
-        sentences = []
-
-        for i, scene in enumerate(script):
-            # 1. Each script has a duration - dialogue - and visual
-            duration = scene.get('duration', 5)
-            dialogue = scene.get('dialogue', '')
-            image_url = images[i] if i < len(images) else None
-
-            # 2. The images script is a list of images urls corresponding to the number of dialogues in the script
-            if image_url:
-                image_path = save_image(image_url)
-                img_clip = ImageClip(image_path).set_duration(duration)
-                # Resize and pad image to match target resolution
-                img_clip = img_clip.resize(height=target_height)
-                if img_clip.w < target_width:
-                    img_clip = img_clip.margin(left=(target_width - img_clip.w) // 2, right=(target_width - img_clip.w) // 2, color=(0,0,0))
-                elif img_clip.w > target_width:
-                    img_clip = img_clip.crop(x1=(img_clip.w - target_width) // 2, x2=((img_clip.w - target_width) // 2) + target_width)
-
-                # Add slow scaling effect based on scene index
-                if i % 2 == 0:
-                    # Even index: scale up
-                    img_clip = img_clip.resize(lambda t: 1 + 0.02 * t)
-                else:
-                    # Odd index: scale down
-                    img_clip = img_clip.resize(lambda t: 1.02 + 0.02 * -t)
-                
-                # Center the scaled image
-                img_clip = img_clip.set_position(('center', 'center'))
-                
-                video_clips.append(img_clip)
-            else:
-                # Create a blank clip if no image is provided
-                video_clips.append(ColorClip(size=(target_width, target_height), color=(0,0,0)).set_duration(duration))
-
-            # 3. We create a video for each dialogue with the corresponding image
-            tts_path = f"../temp/{uuid4()}.mp3"
-            tts(dialogue, voice, filename=tts_path)
-            audio_clip = AudioFileClip(tts_path)
-            audio_clips.append(audio_clip)
-            sentences.append(dialogue)
-
-        # Combine all clips
-
-        print_fn(colored("Concatenate videos", "blue"))
-        final_video = concatenate_videoclips(video_clips, method="compose")
-        print_fn(colored("Concatenate audios", "blue"))
-        final_audio = concatenate_audioclips(audio_clips)
-        print_fn(colored("Ensure video duration matches audio duration", "blue"))
-        
-        # Ensure video duration matches audio duration
-        print_fn(colored("Ensure video duration matches audio duration", "blue"))
-        final_video = final_video.set_duration(final_audio.duration)
-
-        # Add audio to video
-        print_fn(colored("Add audio to video", "blue"))
-        final_video = final_video.set_audio(final_audio)
-
-        # Add subtitles to video
-        print_fn(colored("Add subtitles to video", "blue"))
-        final_video_path = f"../temp/output_{uuid4()}.mp4"
-        
-        final_video.write_videofile(final_video_path, threads=n_threads or 2, fps=30)
-
-        add_captions(
-          video_file=final_video_path,
-          output_file="../temp/my_short_with_captions.mp4",
-
-          # get current project absolute path
-          font=os.path.abspath(os.path.join(os.path.dirname(__file__), "captions/assets/fonts/Bangers-Regular.ttf")),
-          font_size = 120,
-          font_color = text_color,
-
-          stroke_width = 5,
-          stroke_color = "black",
-
-          shadow_strength = 0.0,
-          shadow_blur = 0.0,
-
-          highlight_current_word = True,
-          word_highlight_color = "yellow",
-
-          line_count=1,
-          position=(horizontal_subtitles_position, vertical_subtitles_position),
-          print_info=True,
-
-          padding = 50,
-          use_local_whisper=False
-        )
-        # add_subtitles_to_video(final_video, subtitles_path, final_video_path, n_threads, subtitles_position, text_color)
-
-        print_fn(colored(f"[+] Video generated: {final_video_path}!", "green"))
-
-        return jsonify({
-            "status": "success",
-            "message": "Video generated successfully.",
-            "data": final_video_path,
-        })
-
-    except Exception as err:
-        print_fn(colored(f"[-] Error: {str(err)}", "red"))
-        return jsonify({
-            "status": "error",
-            "message": f"Could not generate video: {str(err)}",
-            "data": [],
-        })
-
-  # 4. We add the audio to the video
-  # 5. We add the subtitles to the video
-  # 6. We concatenate the videos
-  # 7. We save the video
-  # 9. We return the video url
-
-if __name__ == "__main__":
-
-    # Run Flask App
-    app.run(debug=True, host=HOST, port=PORT)

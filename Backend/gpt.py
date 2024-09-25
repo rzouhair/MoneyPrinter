@@ -1,5 +1,6 @@
 import re
 import os
+from venv import logger
 import g4f
 import json
 import openai
@@ -20,7 +21,7 @@ GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 genai.configure(api_key=GOOGLE_API_KEY)
 
 
-def generate_response(prompt: str, ai_model: str) -> str:
+def generate_response(prompt: str, ai_model: str,) -> str:
     """
     Generate a script for a video, depending on the subject of the video.
 
@@ -39,14 +40,14 @@ def generate_response(prompt: str, ai_model: str) -> str:
         # Newest G4F Architecture
         client = Client()
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             provider=g4f.Provider.You, 
             messages=[{"role": "user", "content": prompt}],
         ).choices[0].message.content
 
     elif ai_model in ["gpt3.5-turbo", "gpt4"]:
 
-        model_name = "gpt-3.5-turbo" if ai_model == "gpt3.5-turbo" else "gpt-4-1106-preview"
+        model_name = "gpt-3.5-turbo" if ai_model == "gpt3.5-turbo" else "gpt-4o-mini"
 
         response = openai.chat.completions.create(
 
@@ -141,8 +142,44 @@ def generate_script(video_subject: str, paragraph_number: int, ai_model: str, vo
         # Split the script into paragraphs
         paragraphs = response.split("\n\n")
 
+        logger.info(colored(f"Response: {response}", "blue"))
+        paragraphs_function = [
+          {
+            "name": "extract_paragraphs",
+            "description": "Extract the paragraphs from the script.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "paragraphs": {
+                  "type": "array",
+                  "description": "The list of paragraphs extracted",
+                  "items": {
+                    "type": "string",
+                    "description": "The extracted paragraph"
+                  }
+                },
+              },
+            }
+          }
+        ]
+
+        logger.info("Extracting paragraphs")
+        paragraphs = chat_scaffold([
+            {"role": "user", "content": f"""
+Given the following script, extract the paragraphs in a clean format without any markdown or other formatting. and without changing the original script.
+          
+Script:
+{response}
+"""},
+        ], 'gpt-4o-mini', paragraphs_function)
+
+        logger.info("Selecting the specified number of paragraphs " + str(paragraph_number))
         # Select the specified number of paragraphs
-        selected_paragraphs = paragraphs[:paragraph_number]
+        selected_paragraphs = paragraphs['content']['paragraphs'][:paragraph_number]
+
+        logger.info(colored(f"Selected paragraphs: {selected_paragraphs}", "blue"))
+
+        print(colored(f"Number of paragraphs used: {len(selected_paragraphs)}", "green"))
 
         # Join the selected paragraphs into a single string
         final_script = "\n\n".join(selected_paragraphs)
@@ -226,6 +263,7 @@ def get_search_terms(video_subject: str, amount: int, script: str, ai_model: str
 
     # Let user know
     print(colored(f"\nGenerated {len(search_terms)} search terms: {', '.join(search_terms)}", "cyan"))
+    logger.info(colored(f"\nGenerated {len(search_terms)} search terms: {', '.join(search_terms)}", "cyan"))
 
     # Return search terms
     return search_terms
@@ -266,3 +304,26 @@ def generate_metadata(video_subject: str, script: str, ai_model: str) -> Tuple[s
     keywords = get_search_terms(video_subject, 6, script, ai_model)  
 
     return title, description, keywords  
+
+def chat_scaffold(messages, ai_model, function_call=None):
+  logger.info(openai)
+  resp = openai.chat.completions.create(
+    model=ai_model or 'gpt-4o-mini',
+    messages=messages,
+  ) if not function_call else openai.chat.completions.create(
+    model=ai_model or 'gpt-4o-mini',
+    messages=messages,
+    functions=function_call,
+    function_call="auto",
+  )
+
+  content = resp.choices[0].message.content if not function_call else resp.choices[0].message.function_call.arguments
+
+  try:
+    return {
+      "content": json.loads(content)
+    }
+  except:
+    return {
+      "content": content
+    }

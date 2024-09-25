@@ -11,6 +11,7 @@ import requests
 import threading
 
 from typing import List
+from helpers import openai_tts
 from termcolor import colored
 from playsound import playsound
 
@@ -118,7 +119,7 @@ def generate_audio(text: str, voice: str) -> bytes:
 
 
 # creates an text to speech audio file
-def tts(
+def tiktok_tts(
     text: str,
     voice: str = "none",
     filename: str = "output.mp3",
@@ -205,3 +206,11 @@ def tts(
 
     except Exception as e:
         print(colored(f"[-] An error occurred during TTS: {e}", "red"))
+
+def tts(text: str, voice: str = 'alloy', filename: str = 'output.mp3'):
+  print("Using OpenAI TTS...")
+  response = openai_tts(text, voice)
+  print("Saving audio file...")
+  response.stream_to_file(filename)
+  print(colored(f"[+] Audio file saved successfully as '{filename}'", "green"))
+  return filename

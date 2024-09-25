@@ -1,6 +1,9 @@
 import os
+import random
 import uuid
+from venv import logger
 
+from captions import add_captions
 import requests
 import srt_equalizer
 import assemblyai as aai
@@ -17,7 +20,6 @@ load_dotenv("../.env")
 
 ASSEMBLY_AI_API_KEY = os.getenv("ASSEMBLY_AI_API_KEY")
 
-
 def save_video(video_url: str, directory: str = "../temp") -> str:
     """
     Saves a video from a given URL and returns the path to the video.
@@ -31,10 +33,49 @@ def save_video(video_url: str, directory: str = "../temp") -> str:
     """
     video_id = uuid.uuid4()
     video_path = f"{directory}/{video_id}.mp4"
+
+    logger.info(f"Saving {video_url} to {video_path}")
+
+    payload = {}
+    headers = {
+      'Authorization': 'ZW7nMLprvXyJub29QkWBYcfemuRxE9rUbtejdrLLm52snO2TbwQzED2k',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+    }
+
+    video_url_response_2 = requests.request("GET", video_url, headers=headers, data=payload)
+
+    logger.info(f"Saving video... {video_url_response_2.content}")
     with open(video_path, "wb") as f:
-        f.write(requests.get(video_url).content)
+        f.write(video_url_response_2.content)
 
     return video_path
+
+def save_image(video_url: str, directory: str = "../temp") -> str:
+    """
+    Saves a video from a given URL and returns the path to the video.
+
+    Args:
+        video_url (str): The URL of the video to save.
+        directory (str): The path of the temporary directory to save the video to
+
+    Returns:
+        str: The path to the saved video.
+    """
+    photo_id = uuid.uuid4()
+    photo_path = f"{directory}/{photo_id}.jpeg"
+
+    payload = {}
+    headers = {
+      'Authorization': 'ZW7nMLprvXyJub29QkWBYcfemuRxE9rUbtejdrLLm52snO2TbwQzED2k',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
+    }
+
+    video_url_response_2 = requests.request("GET", video_url, headers=headers, data=payload)
+
+    with open(photo_path, "wb") as f:
+        f.write(video_url_response_2.content)
+
+    return photo_path
 
 
 def __generate_subtitles_assemblyai(audio_path: str, voice: str) -> str:
@@ -132,6 +173,10 @@ def generate_subtitles(audio_path: str, sentences: List[str], audio_clips: List[
         # print(colored("[-] Exiting.", "red"))
         # sys.exit(1)
 
+    logger.info("========== SUBTITLES ==========")
+    logger.info(subtitles)
+    logger.info("========== SUBTITLES ==========")
+
     with open(subtitles_path, "w") as file:
         file.write(subtitles)
 
@@ -143,7 +188,7 @@ def generate_subtitles(audio_path: str, sentences: List[str], audio_clips: List[
     return subtitles_path
 
 
-def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration: int, threads: int) -> str:
+def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration: int, threads: int, target_resolution: tuple) -> str:
     """
     Combines a list of videos into one video and returns the path to the combined video.
 
@@ -162,16 +207,21 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
     # Required duration of each clip
     req_dur = max_duration / len(video_paths)
 
+
     print(colored("[+] Combining videos...", "blue"))
+    logger.info(colored("[+] Combining videos...", "blue"))
     print(colored(f"[+] Each clip will be maximum {req_dur} seconds long.", "blue"))
+    logger.info(colored(f"[+] Each clip will be maximum {req_dur} seconds long.", "blue"))
 
     clips = []
     tot_dur = 0
+    logger.info("Add downloaded clips over and over until the duration of the audio (max_duration) has been reached")
     # Add downloaded clips over and over until the duration of the audio (max_duration) has been reached
     while tot_dur < max_duration:
         for video_path in video_paths:
             clip = VideoFileClip(video_path)
             clip = clip.without_audio()
+            logger.info("Check if clip is longer than the remaining audio")
             # Check if clip is longer than the remaining audio
             if (max_duration - tot_dur) < clip.duration:
                 clip = clip.subclip(0, (max_duration - tot_dur))
@@ -180,6 +230,7 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
                 clip = clip.subclip(0, req_dur)
             clip = clip.set_fps(30)
 
+            logger.info("Not all videos are same size, so we need to resize them")
             # Not all videos are same size,
             # so we need to resize them
             if round((clip.w/clip.h), 4) < 0.5625:
@@ -190,7 +241,7 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
                 clip = crop(clip, width=round(0.5625*clip.h), height=clip.h, \
                             x_center=clip.w / 2, \
                             y_center=clip.h / 2)
-            clip = clip.resize((1080, 1920))
+            clip = clip.resize(target_resolution)
 
             if clip.duration > max_clip_duration:
                 clip = clip.subclip(0, max_clip_duration)
@@ -204,6 +255,26 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
 
     return combined_video_path
 
+def text_with_shadow(txt, font="Montserrat-Black", fontsize=120, color="white", stroke_color="black", stroke_width=40, shadow_color="black", shadow_offset=(-5, 0), highlight_color="yellow"):
+    text_clip = TextClip(
+        txt,
+        font=font,
+        fontsize=fontsize,
+        color=highlight_color if random.choice([1, 2, 3, 5, 6, 7]) == 1 else color,
+        stroke_color=stroke_color,
+        stroke_width=stroke_width,
+    )
+
+    shadow_clip = TextClip(
+        txt,
+        font=font,
+        fontsize=fontsize,
+        color=shadow_color,
+    )
+    
+    result = CompositeVideoClip([shadow_clip, text_clip])
+
+    return result.set_duration(text_clip.duration)
 
 def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str, threads: int, subtitles_position: str,  text_color : str) -> str:
     """
@@ -219,30 +290,94 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str,
     Returns:
         str: The path to the final video.
     """
+
+    def scaling_factor(t):
+        scale_factor = 0.5 + 0.5 * t  # Scale linearly over time (from 1.0 to 1.5 over 1 second)
+        return scale_factor
     # Make a generator that returns a TextClip when called with consecutive
-    generator = lambda txt: TextClip(
+    """ generator = lambda txt: text_with_shadow(
         txt,
-        font="../fonts/bold_font.ttf",
-        fontsize=100,
+        font="/Users/user/Library/Fonts/Poppins-Bold.ttf",
+        fontsize=120,
         color=text_color,
+        highlight_color="yellow",
+        shadow_color="black",
+        stroke_width=1,
         stroke_color="black",
-        stroke_width=5,
-    )
+        shadow_offset=(0, 0)
+    ) """
 
     # Split the subtitles position into horizontal and vertical
     horizontal_subtitles_position, vertical_subtitles_position = subtitles_position.split(",")
 
     # Burn the subtitles into the video
-    subtitles = SubtitlesClip(subtitles_path, generator)
-    result = CompositeVideoClip([
-        VideoFileClip(combined_video_path),
-        subtitles.set_pos((horizontal_subtitles_position, vertical_subtitles_position))
-    ])
-
+   #  subtitles = SubtitlesClip(subtitles_path, generator)
     # Add the audio
     audio = AudioFileClip(tts_path)
+
+    result = VideoFileClip(combined_video_path)
+
+    """ result = CompositeVideoClip([
+      VideoFileClip(combined_video_path),
+      subtitles.set_pos((horizontal_subtitles_position, vertical_subtitles_position))
+    ]) """
+
     result = result.set_audio(audio)
 
+    logger.info("Writing Video")
     result.write_videofile("../temp/output.mp4", threads=threads or 2)
+    logger.info("Video Written")
 
-    return "output.mp4"
+    logger.info("Adding captions")
+
+    add_captions(
+      video_file="../temp/output.mp4",
+      output_file="../temp/my_short_with_captions.mp4",
+
+      # get current project absolute path
+      font=os.path.abspath(os.path.join(os.path.dirname(__file__), "captions/assets/fonts/Bangers-Regular.ttf")),
+      font_size = 120,
+      font_color = "white",
+
+      stroke_width = 5,
+      stroke_color = "black",
+
+      shadow_strength = 0.0,
+      shadow_blur = 0.0,
+
+      highlight_current_word = True,
+      word_highlight_color = "yellow",
+
+      line_count=1,
+      position=(horizontal_subtitles_position, vertical_subtitles_position),
+
+      padding = 50,
+      use_local_whisper=False
+    )
+
+    return "my_short_with_captions.mp4"
+
+
+def generateImage (prompt, options = {
+  "model": 'V_1_TURBO',
+  "aspect_ratio": 'ASPECT_9_16',
+  "magic_prompt_option": 'OFF'
+}):
+  url = "https://api.ideogram.ai/generate"
+
+  apiKey = '-3ooLqGcCHOaZNB7r6hMwHOB1Enn82EDlRnAbp2nB-iqpKEtORy5R-4nngVzvgOHqStHssRgz_n0VrcFIlmjSg'
+
+  payload = { "image_request": {
+          "prompt": prompt,
+          "aspect_ratio": options.get('aspect_ratio', 'ASPECT_16_9'),
+          "model": options.get('model', 'V_2'),
+          "magic_prompt_option": options.get('magic_prompt_option', 'OFF')
+      } }
+  headers = {
+      "Api-Key": apiKey,
+      "Content-Type": "application/json"
+  }
+
+  response = requests.post(url, json=payload, headers=headers)
+
+  return response.json()

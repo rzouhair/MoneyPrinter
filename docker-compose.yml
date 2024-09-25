@@ -22,7 +22,7 @@ services:
     volumes:
       - ./files:/temp
       - ./Backend:/app/backend
-      - ./fonts:/app/fonts
+      - /Users/user/Library/Fonts:/app/fonts
     environment:
       - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
       - TIKTOK_SESSION_ID=${TIKTOK_SESSION_ID}

@@ -7,6 +7,7 @@ import zipfile
 import requests
 
 from termcolor import colored
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -104,8 +105,22 @@ def check_env_vars() -> None:
         SystemExit: If any required environment variables are missing.
     """
     try:
+        load_dotenv("../.env")
+        print(f'Current working directory: {os.getcwd()}')
+
+        # Specify the path to your .env file
+        dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+
+        # Debugging: Print the path to .env
+        print(f'Trying to load .env file from: {dotenv_path}')
+        # Load the .env file
+        load_dotenv(dotenv_path)
+
+        # Access your environment variables
         required_vars = ["PEXELS_API_KEY", "TIKTOK_SESSION_ID", "IMAGEMAGICK_BINARY"]
         missing_vars = [var + os.getenv(var)  for var in required_vars if os.getenv(var) is None or (len(os.getenv(var)) == 0)]  
+
+        logger.error(missing_vars)
 
         if missing_vars:
             missing_vars_str = ", ".join(missing_vars)

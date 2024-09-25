@@ -9,6 +9,7 @@ curl_cffi
 flask-cors==4.0.0
 playsound==1.3.0
 Pillow==9.5.0
+ffmpeg
 python-dotenv==1.0.0
 srt_equalizer==0.1.8
 platformdirs==4.1.0
@@ -17,5 +18,6 @@ assemblyai
 brotli
 google-api-python-client 
 oauth2client
-openai
+openai==1.45.1
 google-generativeai
+captacity

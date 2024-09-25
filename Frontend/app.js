@@ -3,6 +3,7 @@ const aiModel = document.querySelector("#aiModel");
 const voice = document.querySelector("#voice");
 const zipUrl = document.querySelector("#zipUrl");
 const paragraphNumber = document.querySelector("#paragraphNumber");
+const targetResolution = document.querySelector("#targetResolution");
 const youtubeToggle = document.querySelector("#youtubeUploadToggle");
 const useMusicToggle = document.querySelector("#useMusicToggle");
 const customPrompt = document.querySelector("#customPrompt");
@@ -64,6 +65,7 @@ const generateVideo = () => {
   const aiModelValue = aiModel.value;
   const voiceValue = voice.value;
   const paragraphNumberValue = paragraphNumber.value;
+  const targetResolutionValue = targetResolution.value;
   const youtubeUpload = youtubeToggle.checked;
   const useMusicToggleState = useMusicToggle.checked;
   const threads = document.querySelector("#threads").value;
@@ -81,6 +83,7 @@ const generateVideo = () => {
     aiModel: aiModelValue,
     voice: voiceValue,
     paragraphNumber: paragraphNumberValue,
+    targetResolution: targetResolutionValue,
     automateYoutubeUpload: youtubeUpload,
     useMusic: useMusicToggleState,
     zipUrl: zipUrlValue,
@@ -89,6 +92,8 @@ const generateVideo = () => {
     customPrompt: customPromptValue,
     color: colorHexCode,
   };
+
+  console.log(targetResolution)
 
   // Send the actual request to the server
   fetch(url, {
