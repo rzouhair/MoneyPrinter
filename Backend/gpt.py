@@ -1,6 +1,7 @@
 import re
 import os
 from venv import logger
+from flask import jsonify
 import g4f
 import json
 import openai
@@ -143,25 +144,23 @@ def generate_script(video_subject: str, paragraph_number: int, ai_model: str, vo
         paragraphs = response.split("\n\n")
 
         logger.info(colored(f"Response: {response}", "blue"))
-        paragraphs_function = [
-          {
-            "name": "extract_paragraphs",
-            "description": "Extract the paragraphs from the script.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "paragraphs": {
-                  "type": "array",
-                  "description": "The list of paragraphs extracted",
-                  "items": {
-                    "type": "string",
-                    "description": "The extracted paragraph"
-                  }
-                },
+        paragraphs_function = {
+          "name": "extract_paragraphs",
+          "description": "Extract the paragraphs from the script.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "paragraphs": {
+                "type": "array",
+                "description": "The list of paragraphs extracted",
+                "items": {
+                  "type": "string",
+                  "description": "The extracted paragraph"
+                }
               },
-            }
+            },
           }
-        ]
+        }
 
         logger.info("Extracting paragraphs")
         paragraphs = chat_scaffold([
@@ -313,17 +312,102 @@ def chat_scaffold(messages, ai_model, function_call=None):
   ) if not function_call else openai.chat.completions.create(
     model=ai_model or 'gpt-4o-mini',
     messages=messages,
-    functions=function_call,
-    function_call="auto",
+    tools=[
+        {"type": "function", "function": function_call}
+    ],
   )
 
-  content = resp.choices[0].message.content if not function_call else resp.choices[0].message.function_call.arguments
+  tool_call = resp.choices[0].message.tool_calls[0]
+  content = None
+  if (tool_call and function_call):
+    arguments = json.loads(tool_call.function.arguments)
+    content = arguments
+  else:
+    content = resp.choices[0].message.content
 
-  try:
-    return {
-      "content": json.loads(content)
+  print("==========")
+  print(content)
+  print("==========")
+
+  return {
+    "content": content
+  }
+
+def generate_motivational_video_script(quote = None, additional_prompt = ''):
+
+  final_quote = ''
+  if quote:
+     final_quote = f"""
+For the following quote:
+{quote}
+"""
+  else:
+     final_quote = f"""
+Pick a motivation quote from one of the motivational books using this template:
+"[quote]": [author] - [book]
+
+and
+
+"""
+
+  prompt = f"""
+{final_quote}
+
+create:  
+1. A short video script (suitable for TikTok, Reels, or Shorts) that:  
+   - Starts directly with the quote  
+   - Moves immediately into a clear, concise explanation  
+   - Speaks directly to the viewer in simple language appropriate for a 12-year-old  
+   - Relates the quote to the viewer's life or experiences  
+   - Is approximately 45-90 seconds long
+   - The quote shouldn't contain any markdown, asterisks, single or double quotes, or any special characters  
+   - Make it like an old man giving a young man advice, without making it obvious, like "listen here" - "my friend, kiddo, listen here" etc...
+2. A video caption that:  
+   - Mentions the quote and its author/book in this format: "Quote": Author - Book  
+   - Provides an additional explanation or insight  
+   - Is approximately 100 words long  
+
+{additional_prompt}
+Use the following structure for each quote:
+
+## [Quote Number]. [Book Title] by [Author]
+### Video Script:
+"[Quote]" [Insert 50-75 word explanation here or a 30-90 seconds script]
+### Video Caption:
+[Insert 25-40 word caption here]
+
+Example output:
+## 1. "Atomic Habits" by James Clear
+### Video Script:
+"You do not rise to the level of your goals. You fall to the level of your systems." Your daily habits shape your future. Big dreams aren't enough; it's the small actions you take every day that matter. Want to improve? Focus on building good routines. Make small, consistent changes in your life. Your everyday choices are creating the person you'll become.
+### Video Caption:
+James Clear's wisdom from "Atomic Habits" reminds us: success isn't about grand goals, but daily actions. What small habits can you start today to shape your tomorrow? #AtomicHabits #DailyImprovement
+
+The example above isn't exclusive, and not to be taken as a template. The prompt should be modified to suit the specific quote and author/book.
+None of the output should have any markdown, asterics, single or double quotes or any special characters.
+"""
+
+  script_function = {
+    "name": "generate_script",
+    "description": "Generate a motivational video script.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "type": "string",
+          "description": "The motivational video script",
+        },
+        "caption": {
+          "type": "string",
+          "description": "The motivational video caption",
+        }
+      },
     }
-  except:
-    return {
-      "content": content
-    }
+  }
+
+  response = chat_scaffold([
+      {"role": "system", "content": "You are a helpful assistant and professional viral videos content creator that generates motivational videos scripts."},
+      {"role": "user", "content": prompt}
+  ], 'gpt-4o-mini', script_function)
+
+  return response['content']

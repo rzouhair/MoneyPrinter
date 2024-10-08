@@ -129,6 +129,7 @@ def detect_local_whisper(print_info):
 def add_captions(
     video_file,
     output_file = "with_transcript.mp4",
+    write_video_file = True,
 
     font = "Bangers-Regular.ttf",
     font_size = 130,
@@ -137,7 +138,8 @@ def add_captions(
     stroke_width = 3,
     stroke_color = "black",
 
-    highlight_current_word = True,
+    highlight_current_word = False,
+    word_by_word = False,
     word_highlight_color = "red",
 
     line_count = 2,
@@ -171,12 +173,28 @@ def add_captions(
     # temp_audio_file.close()
 
     try:
-        ffmpeg([
-            'ffmpeg',
-            '-y',
-            '-i', video_file,
-            temp_audio_path
-        ])
+        # check if video file is a string
+        if isinstance(video_file, str):
+          # This line uses ffmpeg to extract the audio from the input video file
+          # and save it as a temporary audio file in WAV format.
+          # The parameters are:
+          # -y: Overwrite output file without asking
+          # -i: Specify input file
+          # The last parameter is the output file path
+          ffmpeg([
+              'ffmpeg',
+              '-y',
+              '-i', video_file,
+              temp_audio_path
+          ])
+
+        else:
+          # then the video file is a video clip / composite video clip extract the audio to temp_audio_path
+          # Extract audio from the video clip and save it to a temporary file
+          temp_audio_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+          temp_audio_path = temp_audio_file.name
+          video_file.audio.write_audiofile(temp_audio_path, codec='pcm_s16le')
+          temp_audio_file.close()
 
         if segments is None:
             if print_info:
@@ -196,7 +214,11 @@ def add_captions(
             print("Generating video elements...")
 
         # Open the video file
-        video = VideoFileClip(video_file)
+        if isinstance(video_file, str): 
+          video = VideoFileClip(video_file)
+        else:
+          video = video_file
+
         text_bbox_width = video.w-padding*2
         clips = [video]
 
@@ -213,20 +235,28 @@ def add_captions(
 
         for caption in captions:
             captions_to_draw = []
-            if highlight_current_word:
-                for i, word in enumerate(caption["words"]):
-                    if i+1 < len(caption["words"]):
-                        end = caption["words"][i+1]["start"]
-                    else:
-                        end = word["end"]
-
+            if word_by_word:
+                for word in caption["words"]:
                     captions_to_draw.append({
-                        "text": caption["text"],
+                        "text": word["word"],
                         "start": word["start"],
-                        "end": end,
+                        "end": word["end"],
                     })
             else:
-                captions_to_draw.append(caption)
+                if highlight_current_word:
+                    for i, word in enumerate(caption["words"]):
+                        if i+1 < len(caption["words"]):
+                            end = caption["words"][i+1]["start"]
+                        else:
+                            end = word["end"]
+
+                        captions_to_draw.append({
+                            "text": caption["text"],
+                            "start": word["start"],
+                            "end": end,
+                        })
+                else:
+                    captions_to_draw.append(caption)
 
             for current_index, caption in enumerate(captions_to_draw):
                 line_data = calculate_lines(caption["text"], font, font_size, stroke_width, text_bbox_width)
@@ -282,21 +312,23 @@ def add_captions(
 
         video_with_text = CompositeVideoClip(clips)
 
-        video_with_text.write_videofile(
-            filename=output_file,
-            codec="libx264",
-            fps=video.fps,
-            logger="bar" if print_info else None,
-        )
+        if write_video_file:
+          video_with_text.write_videofile(
+              filename=output_file,
+              codec="libx264",
+              fps=video.fps,
+              logger="bar" if print_info else None,
+          )
+          end_time = time.time()
+          total_time = end_time - _start_time
+          render_time = total_time - generation_time
 
-        end_time = time.time()
-        total_time = end_time - _start_time
-        render_time = total_time - generation_time
-
-        if print_info:
-            print(f"Generated in {generation_time//60:02.0f}:{generation_time%60:02.0f}")
-            print(f"Rendered in {render_time//60:02.0f}:{render_time%60:02.0f}")
-            print(f"Done in {total_time//60:02.0f}:{total_time%60:02.0f}")
+          if print_info:
+              print(f"Generated in {generation_time//60:02.0f}:{generation_time%60:02.0f}")
+              print(f"Rendered in {render_time//60:02.0f}:{render_time%60:02.0f}")
+              print(f"Done in {total_time//60:02.0f}:{total_time%60:02.0f}")
+        else:
+          return video_with_text
 
     finally:
         # Clean up the temporary file

@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
     container_name: "backend"
     ports:
-      - "8080:8080"
+      - "8090:8090"
     command: ["python3", "backend/main.py"]
     volumes:
       - ./files:/temp

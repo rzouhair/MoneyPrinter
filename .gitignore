@@ -17,3 +17,6 @@ main.py-oauth2.json
 Backend/output*
 Songs/
 venv/
+
+Backend/gifs/*
+Backend/hooks/*

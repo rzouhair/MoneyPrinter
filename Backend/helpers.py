@@ -1,8 +1,16 @@
 
+import boto3
+from io import BytesIO
 import uuid
 import requests
 import openai
 import os
+
+import moviepy.editor as mp
+import math
+import numpy as np 
+from PIL import Image, ImageOps 
+import numpy
 
 
 def save_image_locally(image_url):
@@ -415,4 +423,177 @@ def generateVideo():
                 "data": [],
             }
         )
+
+def zoom_out_effect(clip, zoom_max_ratio=0.2, zoom_out_factor=0.04):
+    def effect(get_frame, t):
+
+        try:
+            img = Image.fromarray(get_frame(t).astype('uint8'))
+            base_size = img.size
+ 
+            # Reverse the zoom effect by starting zoomed in and zooming out
+            scale_factor = zoom_max_ratio - (zoom_out_factor * t)
+            scale_factor = max(scale_factor, 0)  # Ensure scale factor doesn't go negative
+    
+            new_size = [
+                math.ceil(base_size[0] * (1 + scale_factor)),
+                math.ceil(base_size[1] * (1 + scale_factor))
+            ]
+    
+            # The new dimensions must be even.
+            new_size[0] = new_size[0] - (new_size[0] % 2)
+            new_size[1] = new_size[1] - (new_size[1] % 2)
+    
+            img = img.resize(new_size, Image.LANCZOS)
+    
+            x = math.ceil((new_size[0] - base_size[0]) / 2)
+            y = math.ceil((new_size[1] - base_size[1]) / 2)
+    
+            img = img.crop([
+                x, y, new_size[0] - x, new_size[1] - y
+            ])
+    
+            # Resize back to base size
+            img = img.resize(base_size, Image.LANCZOS)
+    
+            result = numpy.array(img)
+            img.close()
+
+        except Exception:
+            # If Image.fromarray fails, return the original frame
+            return get_frame(t)
+ 
+        return result
+ 
+    return clip.fl(effect)
+
+def zoom_in_effect(clip, zoom_ratio=0.04):
+    def effect(get_frame, t):
+        try:
+            img = Image.fromarray(get_frame(t).astype('uint8'))
+            base_size = img.size
+
+            new_size = [
+                math.ceil(img.size[0] * (1 + (zoom_ratio * t))),
+                math.ceil(img.size[1] * (1 + (zoom_ratio * t)))
+            ]
+
+            # The new dimensions must be even.
+            new_size[0] = new_size[0] + (new_size[0] % 2)
+            new_size[1] = new_size[1] + (new_size[1] % 2)
+
+            img = img.resize(new_size, Image.LANCZOS)
+
+            x = math.ceil((new_size[0] - base_size[0]) / 2)
+            y = math.ceil((new_size[1] - base_size[1]) / 2)
+
+            img = img.crop([
+                x, y, new_size[0] - x, new_size[1] - y
+            ]).resize(base_size, Image.LANCZOS)
+
+            result = numpy.array(img)
+            img.close()
+
+            return result
+        except Exception:
+            # If Image.fromarray fails, return the original frame
+            return get_frame(t)
+
+    return clip.fl(effect)
+
+ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID')
+SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+
+def upload_video_to_s3 (video_path, bucket_name, object_name):
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id=ACCESS_KEY,
+        aws_secret_access_key=SECRET_KEY,
+    )
+    s3.upload_file(video_path, bucket_name, object_name)
+    return f"https://{bucket_name}.s3.amazonaws.com/{object_name}"
+
+  
+def rgb_to_hex(rgb): 
+    return '%02x%02x%02x' % rgb 
+  
+  
+def give_most_hex(file_path, code = 'hex'): 
+    my_image = Image.open(file_path).convert('RGB') 
+    size = my_image.size 
+    if size[0] >= 400 or size[1] >= 400: 
+        my_image = ImageOps.scale(image=my_image, factor=0.2) 
+    elif size[0] >= 600 or size[1] >= 600: 
+        my_image = ImageOps.scale(image=my_image, factor=0.4) 
+    elif size[0] >= 800 or size[1] >= 800: 
+        my_image = ImageOps.scale(image=my_image, factor=0.5) 
+    elif size[0] >= 1200 or size[1] >= 1200: 
+        my_image = ImageOps.scale(image=my_image, factor=0.6) 
+    my_image = ImageOps.posterize(my_image, 2) 
+    image_array = np.array(my_image) 
+  
+    # create a dictionary of unique colors with each color's count set to 0 
+    # increment count by 1 if it exists in the dictionary 
+    unique_colors = {}  # (r, g, b): count 
+    for column in image_array: 
+        for rgb in column: 
+            t_rgb = tuple(rgb) 
+            if t_rgb not in unique_colors: 
+                unique_colors[t_rgb] = 0
+            if t_rgb in unique_colors: 
+                unique_colors[t_rgb] += 1
+  
+    # get a list of top ten occurrences/counts of colors  
+    # from unique colors dictionary 
+    sorted_unique_colors = sorted( 
+        unique_colors.items(), key=lambda x: x[1],  
+      reverse=True) 
+    converted_dict = dict(sorted_unique_colors) 
+    # print(converted_dict) 
+  
+    # get only 10 highest values 
+    values = list(converted_dict.keys()) 
+    # print(values) 
+    top_10 = values[0:5] 
+    # print(top_10) 
+  
+    # code to convert rgb to hex 
+    if code == 'hex': 
+        hex_list = [] 
+        for key in top_10: 
+            hex = rgb_to_hex(key) 
+            hex_list.append(hex) 
+        return hex_list 
+    else: 
+        return top_10 
+
+def get_contrasting_colors(hex_list):
+  # a list of hex colors with no hashtags
+  # return 2 hex colors that are most contrasting for a background and foreground
+  # the background color should be the first one in the list
+  # the foreground color should be the second one in the list
+
+  # convert hex to rgb
+  rgb_list = [tuple(int(hex[i:i+2], 16) for i in (0, 2, 4)) for hex in hex_list]
+  # get the average color
+  avg_color = tuple(int(sum(rgb[i] for rgb in rgb_list) / len(rgb_list)) for i in range(3))
+  avg_color_hex = rgb_to_hex(avg_color)
+  # get the most contrasting color
+  contrast_color = max(rgb_list, key=lambda x: sum((x[i] - avg_color[i]) ** 2 for i in range(3)))
+  contrast_color_hex = rgb_to_hex(contrast_color)
+
+  filtered_rgb_list = [color for color in rgb_list if sum(color) > 10 and sum(color) < 700]
+
+  darkest_color = min(filtered_rgb_list, key=lambda x: sum(x))
+  darkest_color_hex = rgb_to_hex(darkest_color)
+
+  lightest_color = max(filtered_rgb_list, key=lambda x: sum(x))
+  lightest_color_hex = rgb_to_hex(lightest_color)
+
+  # avg_color_hex is the background color (first in the list)
+  # contrast_color_hex is the text color (second in the list)
+  background_color = darkest_color_hex
+  text_color = lightest_color_hex
+
+  return (background_color, text_color)
 

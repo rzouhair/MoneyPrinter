@@ -62,7 +62,7 @@ def save_image(video_url: str, directory: str = "../temp") -> str:
         str: The path to the saved video.
     """
     photo_id = uuid.uuid4()
-    photo_path = f"{directory}/{photo_id}.jpeg"
+    photo_path = f"{directory}/{photo_id}.png"
 
     payload = {}
     headers = {

@@ -7,6 +7,7 @@
 # --- MODIFIED VERSION --- #
 
 import base64
+import os
 import requests
 import threading
 
@@ -15,6 +16,12 @@ from helpers import openai_tts
 from termcolor import colored
 from playsound import playsound
 
+
+from elevenlabs import VoiceSettings
+from elevenlabs.client import ElevenLabs
+
+openai_api_key = os.getenv('OPENAI_API_KEY')
+elevenlabs_api_key = os.getenv('ELEVENLABS_API_KEY')
 
 VOICES = [
     # DISNEY VOICES
@@ -214,3 +221,39 @@ def tts(text: str, voice: str = 'alloy', filename: str = 'output.mp3'):
   response.stream_to_file(filename)
   print(colored(f"[+] Audio file saved successfully as '{filename}'", "green"))
   return filename
+
+def elevenlabs_tts(text: str, voice: str = '2vVVZzPFTGfzb7tUOKIs', filename: str = 'output.mp3'):
+  try:
+    print("Using ElevenLabs TTS...")
+    print(text)
+
+    client = ElevenLabs(
+      api_key=elevenlabs_api_key,
+    )
+    response = client.text_to_speech.convert(
+        voice_id=voice,
+        output_format="mp3_22050_32",
+        text=text,
+        voice_settings=VoiceSettings(
+            stability=0.3,
+            similarity_boost=0.5,
+            style=0.4,
+        ),
+    )
+
+    # Generating a unique file name for the output MP3 file
+    # Writing the audio to a file
+    with open(filename, "wb") as f:
+        for chunk in response:
+            if chunk:
+                f.write(chunk)
+
+    print(f"{filename}: A new audio file was saved successfully!")
+
+    print("Saving audio file...")
+    # response.stream_to_file(filename)
+    print(colored(f"[+] Audio file saved successfully as '{filename}'", "green"))
+    return filename
+  except Exception as e:
+    print(colored(f"[-] An error occurred during TTS: {e}", "red"))
+    return tts(text, filename=filename)
