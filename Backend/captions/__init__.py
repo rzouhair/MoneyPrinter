@@ -315,7 +315,11 @@ def add_captions(
         if write_video_file:
           video_with_text.write_videofile(
               filename=output_file,
-              codec="libx264",
+              codec='libx264',
+              audio_codec='aac',
+              temp_audiofile='temp-audio.m4a',
+              remove_temp=True,
+              threads=2,
               fps=video.fps,
               logger="bar" if print_info else None,
           )

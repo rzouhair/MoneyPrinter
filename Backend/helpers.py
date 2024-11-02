@@ -504,7 +504,7 @@ def zoom_in_effect(clip, zoom_ratio=0.04):
 ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID')
 SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 
-def upload_video_to_s3 (video_path, bucket_name, object_name):
+def upload_file_to_s3 (video_path, bucket_name, object_name):
     s3 = boto3.client(
         's3',
         aws_access_key_id=ACCESS_KEY,

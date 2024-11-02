@@ -222,7 +222,7 @@ def tts(text: str, voice: str = 'alloy', filename: str = 'output.mp3'):
   print(colored(f"[+] Audio file saved successfully as '{filename}'", "green"))
   return filename
 
-def elevenlabs_tts(text: str, voice: str = '2vVVZzPFTGfzb7tUOKIs', filename: str = 'output.mp3'):
+def elevenlabs_tts(text: str, voice: str = 'q5fkeQ0qM3Pr23vBn60X', filename: str = 'output.mp3'):
   try:
     print("Using ElevenLabs TTS...")
     print(text)
@@ -235,9 +235,9 @@ def elevenlabs_tts(text: str, voice: str = '2vVVZzPFTGfzb7tUOKIs', filename: str
         output_format="mp3_22050_32",
         text=text,
         voice_settings=VoiceSettings(
-            stability=0.3,
-            similarity_boost=0.5,
-            style=0.4,
+            stability=0.8,
+            similarity_boost=0.8,
+            style=0,
         ),
     )
 
@@ -256,4 +256,4 @@ def elevenlabs_tts(text: str, voice: str = '2vVVZzPFTGfzb7tUOKIs', filename: str
     return filename
   except Exception as e:
     print(colored(f"[-] An error occurred during TTS: {e}", "red"))
-    return tts(text, filename=filename)
+    return tts(text, filename=filename, voice='onyx')

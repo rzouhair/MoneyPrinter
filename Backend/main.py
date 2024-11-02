@@ -1,10 +1,10 @@
 import math
 import os
-from helpers import get_contrasting_colors, give_most_hex, upload_video_to_s3, zoom_in_effect, zoom_out_effect
+from quotes import create_book_quote_image
+from helpers import get_contrasting_colors, give_most_hex, save_image_locally, upload_file_to_s3, zoom_in_effect, zoom_out_effect
 from moviepy.video.fx.all import *
 from utils import *
 from dotenv import load_dotenv
-from skimage.filters import gaussian
 import numpy as np
 
 # Load environment variables
@@ -455,17 +455,28 @@ def generate_image():
     try:
         data = request.get_json()
         prompt = data.get('prompt')
-        # Set global variable
-        global GENERATING
-        GENERATING = True
+        options = data.get('options', {
+          "model": 'V_1_TURBO',
+          "aspect_ratio": 'ASPECT_9_16',
+          "magic_prompt_option": 'OFF'
+        })
         
-        response = generateImage(prompt)
+        response = generateImage(prompt, options)
+        data = response.get('data', None)
+        if not data:
+          return jsonify({
+             'status': 'error',
+             "message": 'Could not generate image'
+          })
+        
+        saved_img = save_image_locally(data[0]['url'])
+        url = upload_file_to_s3(saved_img, "aideogram", f"{uuid4()}.png")
 
         return jsonify(
             {
                 "status": "success",
                 "message": "Image generated! See MoneyPrinter/output.mp4 for result.",
-                "data": response.get('data', response),
+                "data": url,
             }
         )
     except Exception as err:
@@ -490,9 +501,39 @@ def cancel():
 
 @app.route("/api/test", methods=["POST"])
 def test():
+  create_book_quote_image("./Backend/backgrounds/001.jpg", "One day, when you least expect it, you are going to crash into someone who is going to be so soft and gentle with your heart, and you are going to be so glad you kept it open. You are going to be so glad that you continued to fight for it - that you chose to believe it deserved more. - @rainbowsalt", "output_quote.jpg", font_size=36, font_color=(0, 0, 0))
   return jsonify({
       "status": "success",
       "message": "Video generated successfully.",
+  })
+
+@app.route("/api/quote", methods=["POST"])
+def generate_quote():
+  bgs_directory = './Backend/backgrounds/'
+  bgs = [gif for gif in os.listdir(bgs_directory) if gif.endswith('.jpg')]
+  random_image = random.choice(bgs)
+
+  data = request.get_json()
+  quote = data.get('quote')
+  font_size = data.get('fontSize', 36)
+
+  yellows_list = [
+    (223, 255, 0, 64),
+    (252, 245, 95, 64),
+    (250, 250, 51, 64),
+  ]
+
+  random_highlight_color = random.choice(yellows_list)
+  highlight = data.get('highlight', True)
+  highlight_color = data.get('highlightColor', random_highlight_color if highlight else None)
+
+  create_book_quote_image(bgs_directory + random_image, quote, "output_quote.png", font_size=font_size, font_color=(0, 0, 0), rectangle_color=highlight_color)
+
+  # uploaded_quote_image = upload_file_to_s3("output_quote.png", "aideogram", f"{uuid4()}.png")
+  return jsonify({
+      "url": 'uploaded_quote_image',
+      "status": "success",
+      "message": "Quote generated successfully.",
   })
 
 @app.route("/api/reel/motivational", methods=["POST"])
@@ -621,10 +662,25 @@ def generate_motivational_reel():
     # create a temporary container black image clip, with a 9:16 aspect ratio (1080:1920)
     container = ColorClip(size=(1080, 1920), color=(0, 0, 0))
 
+    final_clip = []
+
     data = request.get_json()
     
     topic = data.get('topic', None)
     thumbnail = create_thumbnail(topic)
+    final_clip.append(thumbnail)
+
+    add_hook = data.get('add_hook', False)
+    hook = None
+    if (add_hook):
+      hooks_directory = './Backend/hooks/'
+      hooks = [gif for gif in os.listdir(hooks_directory) if gif.endswith('.mp4')]
+      random_hook = random.choice(hooks)
+
+      # get the first frame of the gif and make it an rgb image
+
+      hook = VideoFileClip(hooks_directory + random_hook)
+      final_clip.append(hook)
 
     prompt = data.get('prompt', None)
     additional_prompt = data.get('additional_prompt', '')
@@ -636,9 +692,20 @@ def generate_motivational_reel():
       script = video_info['script']
 
     tts_path = f"../temp/{uuid4()}.mp3"
-    elevenlabs_tts(script, filename=tts_path)
 
-    audio_clip = AudioFileClip(tts_path)
+    voices = ['MMNkyMgZ1lkCYwCGH1nd', 'q5fkeQ0qM3Pr23vBn60X']
+    random_voice = random.choice(voices)
+    print("Chosen voice: " + random_voice)
+    elevenlabs_tts(script, filename=tts_path, voice=random_voice)
+
+    tts_clip = AudioFileClip(tts_path)
+    rain_sound = AudioFileClip('./Backend/sound/rain.mp3').volumex(0.1).set_duration(tts_clip.duration)
+    humming_sound = AudioFileClip('./Backend/sound/humming.mp3').volumex(0.35).set_duration(tts_clip.duration)
+
+    audio_clip = CompositeAudioClip([tts_clip, humming_sound, rain_sound])
+    audio_clip.fps = 44100
+
+    audio_clip.write_audiofile('./Backend/test.mp3')
 
     print_fn(colored("Audio duration", "blue"))
     print_fn(audio_clip.duration)
@@ -693,7 +760,8 @@ def generate_motivational_reel():
 
     # captioned_video = VideoFileClip(target_subtitles_path)
 
-    video_with_thumbnail = concatenate_videoclips([thumbnail, captioned_video])
+    final_clip.append(captioned_video)
+    video_with_thumbnail = concatenate_videoclips(final_clip)
 
     video_with_thumbnail.write_videofile(
       final_video_path,
@@ -704,7 +772,7 @@ def generate_motivational_reel():
       fps=30
     )
 
-    target_subtitles_path = upload_video_to_s3(final_video_path, 'aivideostool', f'{uuid4()}.mp4')
+    target_subtitles_path = upload_file_to_s3(final_video_path, 'aivideostool', f'{uuid4()}.mp4')
 
     return jsonify({
       "status": "success",
@@ -832,7 +900,15 @@ def generate_video_by_script():
         print_fn(colored("Add subtitles to video", "blue"))
         final_video_path = f"../temp/output_{uuid4()}.mp4"
         
-        final_video.write_videofile(final_video_path, threads=n_threads or 2, fps=30)
+        final_video.write_videofile(
+          final_video_path,
+          codec='libx264',
+          audio_codec='aac',
+          temp_audiofile='temp-audio.m4a',
+          remove_temp=True,
+          threads=n_threads or 2,
+          fps=30
+        )
 
         add_captions(
           video_file=final_video_path,
